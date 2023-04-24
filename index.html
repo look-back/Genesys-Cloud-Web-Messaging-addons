@@ -1,0 +1,123 @@
+<html>
+  <head lang="en">
+    <meta charset="UTF-8" />
+    <title>Web Messenger Example</title>
+  </head>
+  <body>
+    <!-- Genesys Web Messenger, please use your own snippet generated in Messenger Deployment -->
+    <script type="text/javascript" charset="utf-8">
+      (function (g, e, n, es, ys) {
+        g["_genesysJs"] = e;
+        g[e] =
+          g[e] ||
+          function () {
+            (g[e].q = g[e].q || []).push(arguments);
+          };
+        g[e].t = 1 * new Date();
+        g[e].c = es;
+        ys = document.createElement("script");
+        ys.async = 1;
+        ys.src = n;
+        ys.charset = "utf-8";
+        document.head.appendChild(ys);
+      })(
+        window,
+        "Genesys",
+        "https://apps.usw2.pure.cloud/genesys-bootstrap/genesys.min.js",
+        {
+          environment: "xxxx",
+          debug: true,
+          deploymentId: "xxxxxxxxxxxxxx",
+        }
+      );
+
+      // The transcript downloading and audible alerting codes start here
+
+      const transcripts = []; // transcript cache
+
+      // generate a combined string from the cache
+      function dynamic_text() {
+        return transcripts.join("\r\n");
+      }
+
+      // generate downloadable text file on the fly
+      function download_file(name, contents, mime_type) {
+        mime_type = mime_type || "text/plain";
+
+        let blob = new Blob([contents], { type: mime_type });
+
+        let dlink = document.createElement("a");
+        dlink.download = name;
+        dlink.href = window.URL.createObjectURL(blob);
+        dlink.onclick = function (e) {
+          // revokeObjectURL needs a delay to work properly
+          var that = this;
+          setTimeout(function () {
+            window.URL.revokeObjectURL(that.href);
+          }, 1500);
+        };
+
+        dlink.click();
+        dlink.remove();
+      }
+
+      // load wav file for audible alerting
+      const ringing = new Audio("ringout.wav");
+
+      Genesys(
+        "subscribe",
+        "MessagingService.messagesReceived",
+        function ({ data }) {
+          console.log("messagesReceived:");
+          console.log(data);
+          for (const message of data.messages) {
+            let d = new Date(message.channel.time);
+            if (message.type === "Text") {
+              if (message.direction === "Inbound") {
+                // text message from client to agent
+                transcripts.push(
+                  `${d.toLocaleString()}, [${
+                    message.channel.metadata.customAttributes
+                      ? message.channel.metadata.customAttributes
+                          .customer_name || "You"
+                      : "Customer"
+                  }] : ${message.text}`
+                );
+              } else if (message.direction === "Outbound") {
+                // text message from agent to client
+                transcripts.push(
+                  `${d.toLocaleString()}, [${
+                    message.channel.from
+                      ? message.channel.from.nickname || "Agent"
+                      : message.originatingEntity
+                  }] > ${message.text}`
+                );
+                ringing.play(); // play audible alerting
+              }
+            } else if (message.type === "Event") {
+              for (const event of message.events) {
+                if (
+                  event.eventType === "Presence" &&
+                  event.presence.type === "Disconnect"
+                ) {
+                  // disconnect message from agent
+                  if (confirm("Would you like to save the transcript?")) {
+                    console.log("OK pressed");
+                    download_file(
+                      `transcript-${d.toString()}.txt`,
+                      dynamic_text()
+                    );
+                  } else {
+                    console.log("Cancel pressed");
+                  }
+                  transcripts.length = 0; // clean up the transcript cache
+                  break;
+                }
+              }
+            }
+          }
+        }
+      );
+    </script>
+  </body>
+</html>
